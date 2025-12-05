@@ -1,0 +1,432 @@
+// Mulai saat DOM siap
+document.addEventListener("DOMContentLoaded", () => {
+  // --- Graf Costum  ---
+  // Inisialisasi elemen UI utama
+  const canvas = document.getElementById("graphCanvas");
+  const ctx = canvas ? canvas.getContext("2d") : null;
+  const tombolTambahTitik = document.getElementById("modeAddNode");
+  const tombolTambahGaris = document.getElementById("modeAddEdge");
+  const tombolPilihAwal = document.getElementById("modeSelectStart");
+  const tombolPilihTujuan = document.getElementById("modeSelectEnd");
+  const inputJarak = document.getElementById("edgeWeightInput");
+  const tombolReset = document.getElementById("resetGraph");
+  const pilihAwal = document.getElementById("startNode");
+  const pilihTujuan = document.getElementById("endNode");
+  const tombolCariRute = document.getElementById("findPath");
+  const infoRute = document.getElementById("customRouteInfo");
+  const statusMode = document.getElementById("modeStatus");
+  const tabelTitikBody = document.querySelector("#nodesTable tbody");
+  const tabelGarisBody = document.querySelector("#edgesTable tbody");
+  const selectDaftarGraf = document.getElementById("daftarGraf");
+  const daftarGrafList = document.getElementById("daftarGrafList");
+  const tombolMuatGraf = document.getElementById("muatGraf");
+  
+
+  
+
+  // Status dan data graf
+  let titik = [];
+  let garis = [];
+  let idTitikSeq = 1;
+  let mode = "tambahTitik";
+  let pilihGaris = { dari: null, ke: null };
+  let garisRute = [];
+
+  
+// Ukuran titik pada kanvas
+  const NODE_RADIUS = 8;
+
+// Radius deteksi dasar klik node
+  const DETECT_RADIUS = 24;
+
+  // Tampilkan status mode dan highlight UI
+  function updateActiveUI() {
+    const mapBtn = new Map([
+      ["tambahTitik", tombolTambahTitik],
+      ["tambahGaris", tombolTambahGaris],
+      ["pilihAwal", tombolPilihAwal],
+      ["pilihTujuan", tombolPilihTujuan],
+    ]);
+    for (const [key, btn] of mapBtn) btn.classList.toggle("active", mode === key);
+    pilihAwal.classList.toggle("active", mode === "pilihAwal");
+    pilihTujuan.classList.toggle("active", mode === "pilihTujuan");
+    canvas.style.cursor = (mode === "tambahTitik" || mode === "tambahGaris" || mode === "pilihAwal" || mode === "pilihTujuan") ? "crosshair" : "default";
+    if (statusMode) {
+      const teks = {
+        tambahTitik: "Mode: Tambah Titik",
+        tambahGaris: pilihGaris.dari ? "Mode: Tambah Garis (pilih titik kedua)" : "Mode: Tambah Garis",
+        pilihAwal: "Mode: Pilih Titik Awal",
+        pilihTujuan: "Mode: Pilih Titik Tujuan",
+      };
+      statusMode.textContent = teks[mode];
+    }
+  }
+  // Set mode aktif, reset seleksi
+  function setMode(m) { mode = m; pilihGaris = { dari: null, ke: null }; updateActiveUI(); draw(); }
+
+  // Perbarui pilihan dropdown node
+  function updateSelectOptions() {
+    const options = titik.map(n => `<option value="${n.id}">${n.name}</option>`).join("");
+    pilihAwal.innerHTML = options;
+    pilihTujuan.innerHTML = options;
+  }
+
+  // Tambah node di posisi klik
+  function tambahTitik(x, y) {
+    let name = prompt("Nama lokasi:", `N${idTitikSeq}`);
+    if (!name) name = `N${idTitikSeq}`;
+    const grid = 60;
+    const sx = Math.round(x/grid)*grid;
+    const sy = Math.round(y/grid)*grid;
+    const node = { id: String(idTitikSeq++), name, x: sx, y: sy };
+    titik.push(node);
+    tambahBarisTitik(node);
+    updateSelectOptions();
+    autoFitKanvas();
+  }
+  function tambahBarisTitik(node) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${node.name}</td><td>${Math.round(node.x)}</td><td>${Math.round(node.y)}</td>`;
+    tabelTitikBody.appendChild(tr);
+  }
+
+  // Tambah sisi dengan bobot
+  function tambahGaris(aId, bId, w) {
+    const a = titik.find(n => n.id === aId);
+    const b = titik.find(n => n.id === bId);
+    if (!a || !b) return;
+    if (aId === bId) return;
+    const numW = Number(w);
+    const edge = { a: aId, b: bId, w: Number.isFinite(numW) ? numW : 1 };
+    garis.push(edge);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${a.name}</td><td>${b.name}</td><td>${edge.w}</td>`;
+    tabelGarisBody.appendChild(tr);
+    autoFitKanvas();
+  }
+
+  // Konversi koordinat klik ke kanvas
+  function posisiKanvas(evt) {
+    const rect = canvas.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const y = evt.clientY - rect.top;
+    return { x, y };
+  }
+
+  // Cari node terdekat dari klik
+  function pukulTitik(x, y) {
+    let p = null, b = Infinity;
+    for (const n of titik) {
+      const dx = x - n.x, dy = y - n.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d <= DETECT_RADIUS && d < b) { p = n; b = d; }
+    }
+    return p;
+  }
+
+  // Gambar graf dan highlight
+  function draw() {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const e of garis) {
+      const a = titik.find(n => n.id === e.a);
+      const b = titik.find(n => n.id === e.b);
+      if (!a || !b) continue;
+      const inPath = garisRute.some(sp => (sp.a === e.a && sp.b === e.b) || (sp.a === e.b && sp.b === e.a));
+      ctx.strokeStyle = inPath ? "#2575fc" : "#94a3b8";
+      ctx.lineWidth = inPath ? 4 : 3;
+      ctx.shadowColor = inPath ? "#a5b4fc" : "#cbd5e1"; ctx.shadowBlur = inPath ? 6 : 2;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const text = `${e.w} m`;
+      ctx.font = "12px Poppins";
+      const tw = ctx.measureText(text).width + 8;
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fillRect(mx - tw/2, my - 11, tw, 16);
+      ctx.fillStyle = inPath ? "#1e3a8a" : "#334155";
+      ctx.fillText(text, mx - tw/2 + 4, my);
+    }
+    ctx.shadowBlur = 0;
+    for (const n of titik) {
+      ctx.fillStyle = "#6a00f4";
+      ctx.beginPath(); ctx.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = "#0f172a"; ctx.font = "12px Poppins"; ctx.fillText(n.name, n.x + 10, n.y - 10);
+    }
+    const ring = (n, c) => { ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(n.x, n.y, 12, 0, Math.PI*2); ctx.stroke(); };
+    if (pilihGaris.dari) { const n = titik.find(x => x.id === pilihGaris.dari); if (n) ring(n, "#6366f1"); }
+    if (pilihAwal.value) { const n = titik.find(x => x.id === pilihAwal.value); if (n) ring(n, "#22c55e"); }
+    if (pilihTujuan.value) { const n = titik.find(x => x.id === pilihTujuan.value); if (n) ring(n, "#ef4444"); }
+  }
+
+  // Sesuaikan ukuran kanvas dengan container
+  function sesuaikanKanvas() {
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.floor(rect.width));
+    canvas.height = 520;
+    draw();
+  }
+
+  function autoFitKanvas() {
+    if (!canvas) return;
+    if (!titik.length) { sesuaikanKanvas(); return; }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of titik) { if (n.x < minX) minX = n.x; if (n.y < minY) minY = n.y; if (n.x > maxX) maxX = n.x; if (n.y > maxY) maxY = n.y; }
+    const margin = 40;
+    const neededW = Math.ceil((maxX - minX) + margin * 2);
+    const neededH = Math.ceil((maxY - minY) + margin * 2);
+    const rect = canvas.getBoundingClientRect();
+    const baseW = Math.max(Math.floor(rect.width), neededW);
+    const baseH = Math.max(520, neededH);
+    const dx = margin - minX;
+    const dy = margin - minY;
+    for (const n of titik) { n.x += dx; n.y += dy; }
+    canvas.width = baseW;
+    canvas.height = baseH;
+    draw();
+  }
+
+  
+
+  async function cariRuteTerpendek(awalId, tujuanId) {
+    const payload = {
+      titik: titik.map(n => n.id),
+      garis: garis.map(e => ({ a: e.a, b: e.b, w: e.w })),
+      awalId,
+      tujuanId
+    };
+    try {
+      const res = await fetch("http://localhost:5000/dijkstra", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+      return { path: [], total: null, edgePath: [] };
+    } catch (_) {
+      return { path: [], total: null, edgePath: [] };
+    }
+  }
+
+  async function muatDaftarGraf() {
+    const res = await fetch("http://localhost:5000/graf/daftar");
+    const daftar = res.ok ? await res.json() : [];
+    selectDaftarGraf.innerHTML = daftar.map(d => `<option value="${d.id}">${d.nama} (${d.dibuat})</option>`).join("");
+    daftarGrafList.innerHTML = daftar.map(d => `<div data-id="${d.id}">#${d.id} - ${d.nama} <small>${d.dibuat}</small></div>`).join("");
+    daftarGrafList.querySelectorAll('[data-id]').forEach(el => {
+      el.addEventListener('click', async () => { selectDaftarGraf.value = el.getAttribute('data-id'); await muatGrafTerpilih(); });
+    });
+    if (daftar.length) {
+      selectDaftarGraf.value = String(daftar[0].id);
+      await muatGrafTerpilih();
+    }
+  }
+  async function muatGrafTerpilih() {
+    const id = selectDaftarGraf.value;
+    if (!id) return;
+    const res = await fetch(`http://localhost:5000/graf/muat?id=${encodeURIComponent(id)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    titik = data.titik || [];
+    garis = data.garis || [];
+    if (titik.length) {
+      const rect = canvas.getBoundingClientRect();
+      const cx = Math.max(220, Math.floor(rect.width/2));
+      const cy = 260;
+      const r = Math.max(140, Math.min(cx, cy) - 60) + Math.max(0, Math.floor(titik.length*2));
+      const step = (Math.PI*2) / titik.length;
+      for (let i = 0; i < titik.length; i++) {
+        const ang = i * step;
+        titik[i].x = cx + Math.cos(ang) * r;
+        titik[i].y = cy + Math.sin(ang) * r;
+      }
+    }
+    const nextNum = Math.max(0, ...titik.map(n => {
+      const m = String(n.id).match(/\d+/);
+      return m ? parseInt(m[0], 10) : 0;
+    })) + 1;
+    idTitikSeq = Number.isFinite(nextNum) ? nextNum : (titik.length + 1);
+    tabelTitikBody.innerHTML = "";
+    tabelGarisBody.innerHTML = "";
+    const idNum = (s) => { const m = String(s).match(/\d+/); return m ? parseInt(m[0],10) : 0; };
+    [...titik].sort((a,b)=>idNum(a.id)-idNum(b.id)).forEach(n=>tambahBarisTitik(n));
+    for (const e of garis) {
+      const a = titik.find(t => t.id === e.a); const b = titik.find(t => t.id === e.b);
+      const tr = document.createElement("tr"); tr.innerHTML = `<td>${a?a.name:e.a}</td><td>${b?b.name:e.b}</td><td>${e.w}</td>`;
+      tabelGarisBody.appendChild(tr);
+    }
+    updateSelectOptions();
+    if (titik.length) {
+      const sortedIds = [...titik].sort((a,b)=>idNum(a.id)-idNum(b.id)).map(n=>n.id);
+      pilihAwal.value = sortedIds[0];
+      pilihTujuan.value = sortedIds[sortedIds.length - 1];
+    }
+    autoFitKanvas();
+  }
+
+
+  if (canvas && ctx) {
+    window.addEventListener("resize", sesuaikanKanvas);
+    sesuaikanKanvas();
+
+    // Klik kanvas jalankan mode
+    canvas.addEventListener("click", (evt) => {
+      const { x, y } = posisiKanvas(evt);
+      if (mode === "tambahTitik") {
+        tambahTitik(x, y);
+      } else if (mode === "tambahGaris") {
+        const n = pukulTitik(x, y);
+        if (!n) return;
+      if (!pilihGaris.dari) {
+        pilihGaris.dari = n.id; updateActiveUI();
+      } else if (!pilihGaris.ke) {
+        pilihGaris.ke = n.id;
+        const w = inputJarak.value || prompt("Jarak (m):", "1");
+        tambahGaris(pilihGaris.dari, pilihGaris.ke, w);
+        pilihGaris = { dari: null, ke: null }; updateActiveUI();
+      }
+      } else if (mode === "pilihAwal") {
+        const n = pukulTitik(x, y); if (!n) return; pilihAwal.value = n.id;
+      } else if (mode === "pilihTujuan") {
+        const n = pukulTitik(x, y); if (!n) return; pilihTujuan.value = n.id;
+      }
+    });
+
+    // Fitur: Mengatur Mode Operasi
+    // Tombol mode dan reset graf
+    tombolTambahTitik.addEventListener("click", () => setMode("tambahTitik"));
+    tombolTambahGaris.addEventListener("click", () => setMode("tambahGaris"));
+    tombolPilihAwal.addEventListener("click", () => setMode("pilihAwal"));
+    tombolPilihTujuan.addEventListener("click", () => setMode("pilihTujuan"));
+    tombolReset.addEventListener("click", () => {
+      titik = []; garis = []; idTitikSeq = 1; garisRute = []; 
+      tabelTitikBody.innerHTML = ""; tabelGarisBody.innerHTML = "";
+      updateSelectOptions(); draw();
+    });
+
+    // Hitung rute terpendek
+    tombolCariRute.addEventListener("click", async () => {
+      const s = pilihAwal.value; const t = pilihTujuan.value;
+      if (!s || !t) { alert("Pilih awal dan tujuan"); return; }
+      const res = await cariRuteTerpendek(s, t);
+      garisRute = (res && res.edgePath) ? res.edgePath : [];
+      const names = ((res && res.path) ? res.path : []).map(id => {
+        const n = titik.find(x => x.id === id);
+        return n ? n.name : id;
+      });
+      infoRute.innerHTML = (res && res.total != null)
+        ? `<strong>Jarak:</strong> ${res.total} m | <strong>Rute:</strong> ${names.join(" → ")}`
+        : "Rute tidak ditemukan";
+      draw();
+    });
+
+    
+    // Sinkronisasi dropdown dengan kanvas
+    pilihAwal.addEventListener("change", () => { if (mode === "pilihAwal") updateActiveUI(); draw(); });
+    pilihTujuan.addEventListener("change", () => { if (mode === "pilihTujuan") updateActiveUI(); draw(); });
+    if (tombolMuatGraf) tombolMuatGraf.addEventListener("click", muatGrafTerpilih);
+    if (selectDaftarGraf) selectDaftarGraf.addEventListener("change", muatGrafTerpilih);
+    
+    const tombolPerumahan = document.getElementById("layoutPerumahan");
+    if (tombolPerumahan) tombolPerumahan.addEventListener("click", () => {  
+  const grid = 60;
+  const snap = v => Math.round(v / grid) * grid;
+
+  // Jalan utama luar (hasil analisis bentuk peta)
+  const outer = [
+    "T1","T2","T3","T4","T5",
+    "T7","T14","T15","T19","T21",
+    "T23","T24","T25"
+  ];
+
+  // Gang vertikal 1
+  const v1 = ["T5","T18","T17","T16","T15"];
+
+  // Gang vertikal 2
+  const v2 = ["T7","T8","T10","T11","T12"];
+
+  // Gang vertikal 3
+  const v3 = ["T4","T20","T19"];
+
+  // Jalur samping
+  const side = ["T22","T2"];
+
+  // --- POSISI KOORDINAT ---
+  const X_OUTER_LEFT = 100;
+  const X_OUTER_RIGHT = 600;
+  const X_V1 = 250;
+  const X_V2 = 350;
+  const X_V3 = 450;
+
+  // 1. Tempatkan loop luar berbentuk persegi
+  let y = 100;
+
+  for (let i=0;i<outer.length;i++){
+    const id = outer[i];
+    let node = titik.find(t=>t.id===id);
+
+    // kiri sampai T5
+    if (i <= 4) {
+      node.x = X_OUTER_LEFT;
+      node.y = y;
+      y += 60;
+    }
+    // T7 → T14 → T15 → T19 → T21 (ke bawah)
+    else if (i <= 9){
+      node.x = X_OUTER_RIGHT;
+      node.y = 100 + (i-5)*60;
+    }
+    // T23 → T24 → T25 naik ke kiri
+    else {
+      node.x = X_OUTER_RIGHT - (i-9)*140;
+      node.y = 100 + (9*60);
+    }
+  }
+
+  // 2. Gang vertikal 1
+  let y1 = 180;
+  for (const id of v1){
+    const node = titik.find(t=>t.id===id);
+    node.x = X_V1;
+    node.y = snap(y1);
+    y1 += 60;
+  }
+
+  // 3. Gang vertikal 2
+  let y2 = 150;
+  for (const id of v2){
+    const node = titik.find(t=>t.id===id);
+    node.x = X_V2;
+    node.y = snap(y2);
+    y2 += 60;
+  }
+
+  // 4. Gang vertikal 3
+  let y3 = 150;
+  for (const id of v3){
+    const node = titik.find(t=>t.id===id);
+    node.x = X_V3;
+    node.y = snap(y3);
+    y3 += 60;
+  }
+
+  // 5. Jalur samping T22–T2
+  const node22 = titik.find(t=>t.id==="T22");
+  const node2 = titik.find(t=>t.id==="T2");
+  node22.x = X_V1 - 80;
+  node22.y = snap(200);
+
+      autoFitKanvas();
+    });
+    muatDaftarGraf();
+  }
+  // Inisialisasi tampilan awal UI
+  updateActiveUI();
+  
+});
