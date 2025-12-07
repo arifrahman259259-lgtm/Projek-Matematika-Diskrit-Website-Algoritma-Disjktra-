@@ -1,0 +1,2 @@
+﻿# Python dependencies untuk Railway deployment
+# Tidak ada external dependencies - menggunakan built-in modules saja
