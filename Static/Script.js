@@ -243,17 +243,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const data = await res.json();
     titik = data.titik || [];
     garis = data.garis || [];
-    if (titik.length) {
-      const rect = canvas.getBoundingClientRect();
-      const cx = Math.max(220, Math.floor(rect.width/2));
-      const cy = 260;
-      const r = Math.max(140, Math.min(cx, cy) - 60) + Math.max(0, Math.floor(titik.length*2));
-      const step = (Math.PI*2) / titik.length;
-      for (let i = 0; i < titik.length; i++) {
-        const ang = i * step;
-        titik[i].x = cx + Math.cos(ang) * r;
-        titik[i].y = cy + Math.sin(ang) * r;
-      }
+    // Gunakan posisi yang sudah tersimpan di database, jangan ubah menjadi lingkaran
+    for (let i = 0; i < titik.length; i++) {
+      titik[i].x = parseFloat(titik[i].x) || 0;
+      titik[i].y = parseFloat(titik[i].y) || 0;
     }
     const nextNum = Math.max(0, ...titik.map(n => {
       const m = String(n.id).match(/\d+/);
