@@ -13,8 +13,6 @@ DB_PATH = os.path.join(ROOT_DIR, "graf.db")
 def db_init():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Aktifkan foreign key constraints
-    c.execute("PRAGMA foreign_keys = ON")
     c.execute("""
         CREATE TABLE IF NOT EXISTS graphs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,158 +22,67 @@ def db_init():
     """)
     c.execute("""
         CREATE TABLE IF NOT EXISTS nodes (
-            graph_id INTEGER NOT NULL,
-            id TEXT NOT NULL,
+            graph_id INTEGER,
+            id TEXT,
             nama TEXT,
-            x REAL NOT NULL,
-            y REAL NOT NULL,
-            PRIMARY KEY (graph_id, id),
-            FOREIGN KEY (graph_id) REFERENCES graphs(id) ON DELETE CASCADE
+            x REAL,
+            y REAL
         )
     """)
     c.execute("""
         CREATE TABLE IF NOT EXISTS edges (
-            graph_id INTEGER NOT NULL,
-            a TEXT NOT NULL,
-            b TEXT NOT NULL,
-            w REAL NOT NULL DEFAULT 0,
-            PRIMARY KEY (graph_id, a, b),
-            FOREIGN KEY (graph_id) REFERENCES graphs(id) ON DELETE CASCADE
+            graph_id INTEGER,
+            a TEXT,
+            b TEXT,
+            w REAL
         )
     """)
-    # Buat index untuk performa query yang lebih baik
-    c.execute("CREATE INDEX IF NOT EXISTS idx_nodes_graph_id ON nodes(graph_id)")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_edges_graph_id ON edges(graph_id)")
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 def db_count_graphs():
-    """Menghitung jumlah graf yang tersimpan"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    try:
-        cnt = c.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
-        return cnt
-    finally:
-        conn.close()
+    cnt = c.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
+    conn.close()
+    return cnt
 
 def db_insert_graph(nama, titik, garis):
-    """Menyimpan graf baru ke database secara permanen"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    try:
-        c.execute("PRAGMA foreign_keys = ON")
-        # Insert graf baru
-        c.execute("INSERT INTO graphs(nama) VALUES (?)", (nama or "Graf Kustom",))
-        gid = c.lastrowid
-        # Insert semua node/titik
-        for n in titik:
-            node_id = str(n.get("id", ""))
-            node_name = str(n.get("name", node_id))
-            node_x = float(n.get("x", 0))
-            node_y = float(n.get("y", 0))
-            c.execute("INSERT OR REPLACE INTO nodes(graph_id,id,nama,x,y) VALUES (?,?,?,?,?)",
-                      (gid, node_id, node_name, node_x, node_y))
-        # Insert semua edge/garis
-        for e in garis:
-            edge_a = str(e.get("a", ""))
-            edge_b = str(e.get("b", ""))
-            edge_w = float(e.get("w", 0))
-            # Simpan edge dalam kedua arah untuk memastikan konsistensi
-            c.execute("INSERT OR REPLACE INTO edges(graph_id,a,b,w) VALUES (?,?,?,?)",
-                      (gid, edge_a, edge_b, edge_w))
-        conn.commit()
-        return gid
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        conn.close()
+    c.execute("INSERT INTO graphs(nama) VALUES (?)", (nama or "Tanpa Nama",))
+    gid = c.lastrowid
+    for n in titik:
+        c.execute("INSERT INTO nodes(graph_id,id,nama,x,y) VALUES (?,?,?,?,?)",
+                  (gid, str(n.get("id")), str(n.get("name")), float(n.get("x",0)), float(n.get("y",0))))
+    for e in garis:
+        c.execute("INSERT INTO edges(graph_id,a,b,w) VALUES (?,?,?,?)",
+                  (gid, str(e.get("a")), str(e.get("b")), float(e.get("w",0))))
+    conn.commit(); conn.close()
+    return gid
 
 def db_daftar_graf():
-    """Mengambil daftar semua graf yang tersimpan"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    try:
-        rows = c.execute("SELECT id, nama, dibuat FROM graphs ORDER BY id DESC").fetchall()
-        return [{"id": r[0], "nama": r[1], "dibuat": r[2]} for r in rows]
-    finally:
-        conn.close()
+    rows = c.execute("SELECT id, nama, dibuat FROM graphs ORDER BY id DESC").fetchall()
+    conn.close()
+    return [{"id": r[0], "nama": r[1], "dibuat": r[2]} for r in rows]
 
 def db_muat_graf(graph_id):
-    """Memuat graf dari database berdasarkan ID"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    try:
-        nodes = c.execute("SELECT id, nama, x, y FROM nodes WHERE graph_id=? ORDER BY id", (graph_id,)).fetchall()
-        edges = c.execute("SELECT a, b, w FROM edges WHERE graph_id=?", (graph_id,)).fetchall()
-        titik = [{"id": r[0], "name": r[1], "x": r[2], "y": r[3]} for r in nodes]
-        garis = [{"a": r[0], "b": r[1], "w": r[2]} for r in edges]
-        return {"titik": titik, "garis": garis}
-    finally:
-        conn.close()
+    nodes = c.execute("SELECT id, nama, x, y FROM nodes WHERE graph_id=?", (graph_id,)).fetchall()
+    edges = c.execute("SELECT a, b, w FROM edges WHERE graph_id=?", (graph_id,)).fetchall()
+    conn.close()
+    titik = [{"id": r[0], "name": r[1], "x": r[2], "y": r[3]} for r in nodes]
+    garis = [{"a": r[0], "b": r[1], "w": r[2]} for r in edges]
+    return {"titik": titik, "garis": garis}
 
 def db_find_graph_by_name(nama):
-    """Mencari graf berdasarkan nama"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    try:
-        row = c.execute("SELECT id FROM graphs WHERE nama=?", (nama,)).fetchone()
-        return row[0] if row else None
-    finally:
-        conn.close()
-
-def db_update_graph(graph_id, nama, titik, garis):
-    """Update graf yang sudah ada di database"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    try:
-        c.execute("PRAGMA foreign_keys = ON")
-        # Update nama graf
-        c.execute("UPDATE graphs SET nama=? WHERE id=?", (nama or "Graf Kustom", graph_id))
-        # Hapus node dan edge lama
-        c.execute("DELETE FROM nodes WHERE graph_id=?", (graph_id,))
-        c.execute("DELETE FROM edges WHERE graph_id=?", (graph_id,))
-        # Insert node dan edge baru
-        for n in titik:
-            node_id = str(n.get("id", ""))
-            node_name = str(n.get("name", node_id))
-            node_x = float(n.get("x", 0))
-            node_y = float(n.get("y", 0))
-            c.execute("INSERT INTO nodes(graph_id,id,nama,x,y) VALUES (?,?,?,?,?)",
-                      (graph_id, node_id, node_name, node_x, node_y))
-        for e in garis:
-            edge_a = str(e.get("a", ""))
-            edge_b = str(e.get("b", ""))
-            edge_w = float(e.get("w", 0))
-            c.execute("INSERT INTO edges(graph_id,a,b,w) VALUES (?,?,?,?)",
-                      (graph_id, edge_a, edge_b, edge_w))
-        conn.commit()
-        return graph_id
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        conn.close()
-
-def db_delete_graph(graph_id):
-    """Menghapus graf dari database (akan otomatis menghapus node dan edge karena CASCADE)"""
-    # Graf ID 2 (Graf Perumahan - Layout Peta) tidak boleh dihapus
-    if graph_id == 2:
-        raise ValueError("Graf Perumahan - Layout Peta tidak dapat dihapus")
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    try:
-        c.execute("PRAGMA foreign_keys = ON")
-        c.execute("DELETE FROM graphs WHERE id=?", (graph_id,))
-        conn.commit()
-        return True
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        conn.close()
+    row = c.execute("SELECT id FROM graphs WHERE nama=?", (nama,)).fetchone()
+    conn.close()
+    return row[0] if row else None
 
 def _load_list_graf_json():
     try:
@@ -186,15 +93,7 @@ def _load_list_graf_json():
         return None
 
 def preload_from_file():
-    # Coba load dengan layout perumahan terlebih dahulu
-    file_path = os.path.join(ROOT_DIR, "data", "list graf.json")
-    if os.path.exists(file_path):
-        data = grafmod.build_graph_with_perumahan_layout(file_path, "Graf Perumahan - Layout Peta")
-        if not data:
-            data = _load_list_graf_json()
-    else:
-        data = None
-    
+    data = _load_list_graf_json()
     if data:
         try:
             conn = sqlite3.connect(DB_PATH)
@@ -317,11 +216,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data); return
         if p.path in ("/graf/json", "/api/graf/json"):
             file_path = os.path.join(ROOT_DIR, "data", "list graf.json")
-            # Gunakan layout perumahan yang lebih baik
-            data = grafmod.build_graph_with_perumahan_layout(file_path, "Graf Perumahan - Layout Peta") or {}
-            if not data:
-                # Fallback ke fungsi lama jika fungsi baru gagal
-                data = grafmod.build_graph_from_json(file_path) or {}
+            data = grafmod.build_graph_from_json(file_path) or {}
             try:
                 nama = data.get("nama")
                 if nama and not db_find_graph_by_name(nama):
@@ -343,45 +238,13 @@ class Handler(BaseHTTPRequestHandler):
             nama = body.get("nama") or "Graf Kustom"
             titik = body.get("titik", [])
             garis = body.get("garis", [])
-            graph_id = body.get("id")  # Jika ada ID, berarti update
             try:
-                if graph_id:
-                    # Update graf yang sudah ada
-                    gid = db_update_graph(int(graph_id), nama, titik, garis)
-                    d = json.dumps({"id": gid, "nama": nama, "message": "Graf berhasil diperbarui"}).encode("utf-8")
-                else:
-                    # Simpan graf baru
-                    gid = db_insert_graph(nama, titik, garis)
-                    d = json.dumps({"id": gid, "nama": nama, "message": "Graf berhasil disimpan"}).encode("utf-8")
+                gid = db_insert_graph(nama, titik, garis)
+                d = json.dumps({"id": gid, "nama": nama}).encode("utf-8")
                 self.send_response(200); self._cors(); self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(d))); self.end_headers(); self.wfile.write(d); return
-            except Exception as e:
-                error_msg = json.dumps({"error": str(e)}).encode("utf-8")
-                self.send_response(500); self._cors(); self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(error_msg))); self.end_headers(); self.wfile.write(error_msg); return
-        if p.path in ("/graf/hapus", "/api/graf/hapus"):
-            graph_id = body.get("id")
-            if not graph_id:
-                self.send_response(400); self._cors(); self.end_headers(); return
-            try:
-                graph_id_int = int(graph_id)
-                # Cek apakah graf ID 2 (protected)
-                if graph_id_int == 2:
-                    error_msg = json.dumps({"error": "Graf Perumahan - Layout Peta tidak dapat dihapus"}).encode("utf-8")
-                    self.send_response(403); self._cors(); self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(error_msg))); self.end_headers(); self.wfile.write(error_msg); return
-                db_delete_graph(graph_id_int)
-                d = json.dumps({"message": "Graf berhasil dihapus"}).encode("utf-8")
-                self.send_response(200); self._cors(); self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(d))); self.end_headers(); self.wfile.write(d); return
-            except ValueError as e:
-                error_msg = json.dumps({"error": str(e)}).encode("utf-8")
-                self.send_response(403); self._cors(); self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(error_msg))); self.end_headers(); self.wfile.write(error_msg); return
-            except Exception as e:
-                error_msg = json.dumps({"error": str(e)}).encode("utf-8")
-                self.send_response(500); self._cors(); self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(error_msg))); self.end_headers(); self.wfile.write(error_msg); return
+            except Exception:
+                self.send_response(500); self._cors(); self.end_headers(); return
         if p.path in ("/dijkstra", "/api/dijkstra"):
             r = jalankan_dijkstra(body.get("titik", []), body.get("garis", []), body.get("awalId"), body.get("tujuanId"))
             d = json.dumps(r).encode("utf-8")

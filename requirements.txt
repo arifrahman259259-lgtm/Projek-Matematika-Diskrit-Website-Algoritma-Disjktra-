@@ -1,2 +1,3 @@
-﻿# Python dependencies untuk Railway deployment
+# Python dependencies untuk SmarterASP.NET
 # Tidak ada external dependencies - menggunakan built-in modules saja
+

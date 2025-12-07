@@ -21,7 +21,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const daftarGrafList = document.getElementById("daftarGrafList");
   const tombolMuatGraf = document.getElementById("muatGraf");
   const tombolSimpanGraf = document.getElementById("simpanGraf");
-  const tombolHapusGraf = document.getElementById("hapusGraf");
   
 
   
@@ -76,18 +75,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Tambah node di posisi klik
   function tambahTitik(x, y) {
     let name = prompt("Nama lokasi:", `N${idTitikSeq}`);
-    // Jika user klik Cancel, prompt() mengembalikan null
-    if (name === null) {
-      return; // Cancel - tidak menambahkan titik
-    }
-    // Jika user klik OK tanpa mengisi nama, gunakan default
-    if (!name || name.trim() === "") {
-      name = `N${idTitikSeq}`;
-    }
+    if (!name) name = `N${idTitikSeq}`;
     const grid = 60;
     const sx = Math.round(x/grid)*grid;
     const sy = Math.round(y/grid)*grid;
-    const node = { id: String(idTitikSeq++), name: name.trim(), x: sx, y: sy };
+    const node = { id: String(idTitikSeq++), name, x: sx, y: sy };
     titik.push(node);
     tambahBarisTitik(node);
     updateSelectOptions();
@@ -229,30 +221,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const res = await fetch("/api/graf/daftar");
     const daftar = res.ok ? await res.json() : [];
     selectDaftarGraf.innerHTML = daftar.map(d => `<option value="${d.id}">${d.nama} (${d.dibuat})</option>`).join("");
-    // Tampilkan daftar dengan tombol hapus (kecuali ID 2)
-    daftarGrafList.innerHTML = daftar.map(d => {
-      const canDelete = d.id !== 2;
-      const deleteBtn = canDelete ? `<button class="btn-hapus-graf" data-id="${d.id}" style="margin-left:10px; padding:2px 8px; font-size:11px; background:#ef4444; color:white; border:none; border-radius:3px; cursor:pointer;">Hapus</button>` : `<span style="margin-left:10px; color:#94a3b8; font-size:11px;">(Tidak dapat dihapus)</span>`;
-      return `<div data-id="${d.id}" style="display:flex; align-items:center; margin-bottom:5px;">
-        <span style="flex:1; cursor:pointer;">#${d.id} - ${d.nama} <small>${d.dibuat}</small></span>
-        ${deleteBtn}
-      </div>`;
-    }).join("");
-    // Event listener untuk klik item (muat graf)
-    daftarGrafList.querySelectorAll('[data-id] > span').forEach(el => {
-      el.addEventListener('click', async () => {
-        const id = el.parentElement.getAttribute('data-id');
-        selectDaftarGraf.value = id;
-        await muatGrafTerpilih();
-      });
-    });
-    // Event listener untuk tombol hapus
-    daftarGrafList.querySelectorAll('.btn-hapus-graf').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation(); // Mencegah trigger klik parent
-        const graphId = btn.getAttribute('data-id');
-        await hapusGraf(graphId);
-      });
+    daftarGrafList.innerHTML = daftar.map(d => `<div data-id="${d.id}">#${d.id} - ${d.nama} <small>${d.dibuat}</small></div>`).join("");
+    daftarGrafList.querySelectorAll('[data-id]').forEach(el => {
+      el.addEventListener('click', async () => { selectDaftarGraf.value = el.getAttribute('data-id'); await muatGrafTerpilih(); });
     });
     if (daftar.length) {
       selectDaftarGraf.value = String(daftar[0].id);
@@ -264,29 +235,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   }
-
-  async function hapusGraf(graphId) {
-    // Konfirmasi sebelum hapus
-    if (!confirm(`Apakah Anda yakin ingin menghapus graf ini?`)) {
-      return; // User klik Cancel
-    }
-    try {
-      const res = await fetch("/api/graf/hapus", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: parseInt(graphId) })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        alert("Graf berhasil dihapus");
-        await muatDaftarGraf(); // Refresh daftar
-      } else {
-        alert(data.error || "Gagal menghapus graf");
-      }
-    } catch (error) {
-      alert("Gagal menghapus graf: " + error.message);
-    }
-  }
   async function muatGrafTerpilih() {
     const id = selectDaftarGraf.value;
     if (!id) return;
@@ -295,11 +243,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const data = await res.json();
     titik = data.titik || [];
     garis = data.garis || [];
-    // Gunakan posisi yang sudah tersimpan di database, jangan ubah menjadi lingkaran
-    // Hanya pastikan koordinat adalah angka
-    for (let i = 0; i < titik.length; i++) {
-      titik[i].x = parseFloat(titik[i].x) || 0;
-      titik[i].y = parseFloat(titik[i].y) || 0;
+    if (titik.length) {
+      const rect = canvas.getBoundingClientRect();
+      const cx = Math.max(220, Math.floor(rect.width/2));
+      const cy = 260;
+      const r = Math.max(140, Math.min(cx, cy) - 60) + Math.max(0, Math.floor(titik.length*2));
+      const step = (Math.PI*2) / titik.length;
+      for (let i = 0; i < titik.length; i++) {
+        const ang = i * step;
+        titik[i].x = cx + Math.cos(ang) * r;
+        titik[i].y = cy + Math.sin(ang) * r;
+      }
     }
     const nextNum = Math.max(0, ...titik.map(n => {
       const m = String(n.id).match(/\d+/);
@@ -341,16 +295,7 @@ document.addEventListener("DOMContentLoaded", () => {
         pilihGaris.dari = n.id; updateActiveUI();
       } else if (!pilihGaris.ke) {
         pilihGaris.ke = n.id;
-        let w = inputJarak.value;
-        if (!w) {
-          w = prompt("Jarak (m):", "1");
-          // Jika user klik Cancel, prompt() mengembalikan null
-          if (w === null) {
-            pilihGaris = { dari: null, ke: null }; // Reset seleksi
-            updateActiveUI();
-            return; // Cancel - tidak menambahkan garis
-          }
-        }
+        const w = inputJarak.value || prompt("Jarak (m):", "1");
         tambahGaris(pilihGaris.dari, pilihGaris.ke, w);
         pilihGaris = { dari: null, ke: null }; updateActiveUI();
       }
@@ -397,13 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (selectDaftarGraf) selectDaftarGraf.addEventListener("change", muatGrafTerpilih);
     if (tombolSimpanGraf) tombolSimpanGraf.addEventListener("click", async () => {
       const nama = prompt("Nama graf:", "Graf Kustom");
-      // Jika user klik Cancel, prompt() mengembalikan null
-      if (nama === null) {
-        return; // Cancel - tidak melakukan apa-apa
-      }
-      // Jika user klik OK tanpa mengisi nama, gunakan default
-      const finalNama = nama.trim() || "Graf Kustom";
-      const payload = { nama: finalNama, titik, garis };
+      const payload = { nama, titik, garis };
       try {
         const res = await fetch("/api/graf/simpan", {
           method: "POST",
@@ -421,21 +360,97 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
     
-    // Tombol hapus graf dari dropdown
-    if (tombolHapusGraf) tombolHapusGraf.addEventListener("click", async () => {
-      const selectedId = selectDaftarGraf.value;
-      if (!selectedId) {
-        alert("Pilih graf yang ingin dihapus");
-        return;
-      }
-      const graphId = parseInt(selectedId);
-      if (graphId === 2) {
-        alert("Graf Perumahan - Layout Peta tidak dapat dihapus");
-        return;
-      }
-      await hapusGraf(graphId);
+    const tombolPerumahan = document.getElementById("layoutPerumahan");
+    if (tombolPerumahan) tombolPerumahan.addEventListener("click", () => {  
+  const grid = 60;
+  const snap = v => Math.round(v / grid) * grid;
+
+  // Jalan utama luar (hasil analisis bentuk peta)
+  const outer = [
+    "T1","T2","T3","T4","T5",
+    "T7","T14","T15","T19","T21",
+    "T23","T24","T25"
+  ];
+
+  // Gang vertikal 1
+  const v1 = ["T5","T18","T17","T16","T15"];
+
+  // Gang vertikal 2
+  const v2 = ["T7","T8","T10","T11","T12"];
+
+  // Gang vertikal 3
+  const v3 = ["T4","T20","T19"];
+
+  // Jalur samping
+  const side = ["T22","T2"];
+
+  // --- POSISI KOORDINAT ---
+  const X_OUTER_LEFT = 100;
+  const X_OUTER_RIGHT = 600;
+  const X_V1 = 250;
+  const X_V2 = 350;
+  const X_V3 = 450;
+
+  // 1. Tempatkan loop luar berbentuk persegi
+  let y = 100;
+
+  for (let i=0;i<outer.length;i++){
+    const id = outer[i];
+    let node = titik.find(t=>t.id===id);
+
+    // kiri sampai T5
+    if (i <= 4) {
+      node.x = X_OUTER_LEFT;
+      node.y = y;
+      y += 60;
+    }
+    // T7 → T14 → T15 → T19 → T21 (ke bawah)
+    else if (i <= 9){
+      node.x = X_OUTER_RIGHT;
+      node.y = 100 + (i-5)*60;
+    }
+    // T23 → T24 → T25 naik ke kiri
+    else {
+      node.x = X_OUTER_RIGHT - (i-9)*140;
+      node.y = 100 + (9*60);
+    }
+  }
+
+  // 2. Gang vertikal 1
+  let y1 = 180;
+  for (const id of v1){
+    const node = titik.find(t=>t.id===id);
+    node.x = X_V1;
+    node.y = snap(y1);
+    y1 += 60;
+  }
+
+  // 3. Gang vertikal 2
+  let y2 = 150;
+  for (const id of v2){
+    const node = titik.find(t=>t.id===id);
+    node.x = X_V2;
+    node.y = snap(y2);
+    y2 += 60;
+  }
+
+  // 4. Gang vertikal 3
+  let y3 = 150;
+  for (const id of v3){
+    const node = titik.find(t=>t.id===id);
+    node.x = X_V3;
+    node.y = snap(y3);
+    y3 += 60;
+  }
+
+  // 5. Jalur samping T22–T2
+  const node22 = titik.find(t=>t.id==="T22");
+  const node2 = titik.find(t=>t.id==="T2");
+  node22.x = X_V1 - 80;
+  node22.y = snap(200);
+
+      autoFitKanvas();
     });
-    
     muatDaftarGraf();
   }
   // Inisialisasi tampilan awal UI
