@@ -490,6 +490,9 @@ class WSGIAdapter:
                 self.response_code = 200
                 self.response_message = 'OK'
                 self.headers_sent = False
+                # Initialize rfile and wfile from request
+                self.rfile = request.rfile
+                self.wfile = request.wfile
             
             def send_response(self, code, message=None):
                 self.response_code = code
