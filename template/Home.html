@@ -11,18 +11,16 @@
 <body>
 
   <header>
-    <div class="logo">Algoritma Dijsktra</div>
-    <nav>
-    </nav>
+    <div class="logo">Algoritma Dijkstra</div>
   </header>
   
   <section id="graph-builder" class="graph-section">
-    <h2>Graf <span>Costum</span></h2>
+    <h2>Graf <span>Kustom</span></h2>
     <div class="upload-area" id="uploadArea" style="display:none"></div>
     <div class="graph-split">
       <div class="preview-box">
-        <h3>Gambar Peta </h3>
-        <img src="/gambar/gambar peta.png" alt="Screenshot pratinjau" style="width:100%; height:auto; object-fit:contain;" />
+        <h3>Gambar Peta</h3>
+        <img id="mapImage" src="/gambar/gambar peta.png" alt="Screenshot pratinjau" style="width:100%; height:auto; object-fit:contain;" />
       </div>
       <div class="canvas-box">
         <h3>Graf Kustom</h3>
@@ -70,7 +68,22 @@
         </table>
       </div>
     </div>
+    <div class="table-box-iterasi">
+      <h3>Iterasi Algoritma Dijkstra</h3>
+      <div class="table-wrapper">
+        <table id="iterationsTable">
+          <thead id="iterationsTableHead">
+            <tr>
+              <th>Iterasi</th>
+              <th>Diproses</th>
+            </tr>
+          </thead>
+          <tbody id="iterationsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
+  
   <footer>
   </footer>
   <script src="/Static/Script.js"></script>

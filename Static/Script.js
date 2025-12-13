@@ -23,8 +23,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const tombolSimpanGraf = document.getElementById("simpanGraf");
   
 
-  
-
   // Status dan data graf
   let titik = [];
   let garis = [];
@@ -100,10 +98,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const numW = Number(w);
     const edge = { a: aId, b: bId, w: Number.isFinite(numW) ? numW : 1 };
     garis.push(edge);
+    tambahBarisGaris(aId, bId, edge.w);
+    draw();
+  }
+  
+  function tambahBarisGaris(aId, bId, w) {
+    const a = titik.find(n => n.id === aId);
+    const b = titik.find(n => n.id === bId);
+    if (!a || !b) return;
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${a.name}</td><td>${b.name}</td><td>${edge.w}</td>`;
+    tr.innerHTML = `<td>${a.name || aId}</td><td>${b.name || bId}</td><td>${Math.round(w)}</td>`;
     tabelGarisBody.appendChild(tr);
-    autoFitKanvas();
   }
 
   // Konversi koordinat klik ke kanvas
@@ -129,39 +134,108 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Gambar graf dan highlight
   function draw() {
-    if (!ctx) return;
+    if (!ctx || !canvas) return;
+    
+    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    
+    // Set default styles
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowBlur = 0;
+    
+    // Gambar garis/edges
     for (const e of garis) {
       const a = titik.find(n => n.id === e.a);
       const b = titik.find(n => n.id === e.b);
       if (!a || !b) continue;
-      const inPath = garisRute.some(sp => (sp.a === e.a && sp.b === e.b) || (sp.a === e.b && sp.b === e.a));
+      
+      // Cek apakah edge ini ada di path terpendek
+      const inPath = garisRute.some(sp => 
+        (sp.a === e.a && sp.b === e.b) || (sp.a === e.b && sp.b === e.a)
+      );
+      
+      // Style untuk path terpendek vs edge biasa
       ctx.strokeStyle = inPath ? "#2575fc" : "#94a3b8";
-      ctx.lineWidth = inPath ? 4 : 3;
-      ctx.shadowColor = inPath ? "#a5b4fc" : "#cbd5e1"; ctx.shadowBlur = inPath ? 6 : 2;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.lineWidth = inPath ? 4 : 2;
+      ctx.shadowColor = inPath ? "#a5b4fc" : "transparent";
+      ctx.shadowBlur = inPath ? 6 : 0;
+      
+      // Gambar garis
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      
+      // Gambar label jarak di tengah garis
       const mx = (a.x + b.x) / 2;
       const my = (a.y + b.y) / 2;
-      const text = `${e.w} m`;
-      ctx.font = "12px Poppins";
+      const text = `${Math.round(e.w)} m`;
+      ctx.font = "11px Poppins";
       const tw = ctx.measureText(text).width + 8;
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.fillRect(mx - tw/2, my - 11, tw, 16);
+      const th = 14;
+      
+      // Background untuk label
+      ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+      ctx.fillRect(mx - tw/2, my - th/2, tw, th);
+      
+      // Text label
       ctx.fillStyle = inPath ? "#1e3a8a" : "#334155";
-      ctx.fillText(text, mx - tw/2 + 4, my);
+      ctx.fillText(text, mx - tw/2 + 4, my + 4);
     }
+    
+    // Reset shadow
     ctx.shadowBlur = 0;
+    
+    // Gambar node/titik
     for (const n of titik) {
+      // Pastikan koordinat valid
+      if (n.x === undefined || n.y === undefined || isNaN(n.x) || isNaN(n.y)) continue;
+      
+      // Gambar node
       ctx.fillStyle = "#6a00f4";
-      ctx.beginPath(); ctx.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.fillStyle = "#0f172a"; ctx.font = "12px Poppins"; ctx.fillText(n.name, n.x + 10, n.y - 10);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Border node
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Label node
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "12px Poppins";
+      ctx.fillText(n.name || n.id, n.x + 12, n.y - 8);
     }
-    const ring = (n, c) => { ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(n.x, n.y, 12, 0, Math.PI*2); ctx.stroke(); };
-    if (pilihGaris.dari) { const n = titik.find(x => x.id === pilihGaris.dari); if (n) ring(n, "#6366f1"); }
-    if (pilihAwal.value) { const n = titik.find(x => x.id === pilihAwal.value); if (n) ring(n, "#22c55e"); }
-    if (pilihTujuan.value) { const n = titik.find(x => x.id === pilihTujuan.value); if (n) ring(n, "#ef4444"); }
+    
+    // Helper function untuk ring highlight
+    const ring = (n, c) => {
+      if (!n || n.x === undefined || n.y === undefined) return;
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, 14, 0, Math.PI * 2);
+      ctx.stroke();
+    };
+    
+    // Highlight node yang dipilih untuk garis
+    if (pilihGaris.dari) {
+      const n = titik.find(x => x.id === pilihGaris.dari);
+      if (n) ring(n, "#6366f1");
+    }
+    
+    // Highlight titik awal (hijau)
+    if (pilihAwal && pilihAwal.value) {
+      const n = titik.find(x => x.id === pilihAwal.value);
+      if (n) ring(n, "#22c55e");
+    }
+    
+    // Highlight titik tujuan (merah)
+    if (pilihTujuan && pilihTujuan.value) {
+      const n = titik.find(x => x.id === pilihTujuan.value);
+      if (n) ring(n, "#ef4444");
+    }
   }
 
   // Sesuaikan ukuran kanvas dengan container
@@ -241,9 +315,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const data = await res.json();
         return data;
       }
-      return { path: [], total: null, edgePath: [] };
-    } catch (_) {
-      return { path: [], total: null, edgePath: [] };
+      console.error("API request failed:", res.status, res.statusText);
+      return { path: [], total: null, edgePath: [], iterations: [] };
+    } catch (e) {
+      console.error("Exception in cariRuteTerpendek:", e);
+      return { path: [], total: null, edgePath: [], iterations: [] };
     }
   }
 
@@ -277,11 +353,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // Reset koordinat asli
     originalCoords.clear();
     
-    // Jangan ubah koordinat jika sudah ada dari koordinat_peta.json
     // Koordinat sudah diatur oleh server berdasarkan koordinat_peta.json
-    // Hanya ubah jika semua node tidak punya koordinat yang valid
-    const hasValidCoords = titik.every(n => n.x !== undefined && n.y !== undefined && n.x !== null && n.y !== null);
+    const hasValidCoords = titik.every(n => n.x !== undefined && n.y !== undefined && n.x !== null && n.y !== null && !isNaN(n.x) && !isNaN(n.y));
     if (titik.length && !hasValidCoords) {
+      // Fallback: hanya untuk graf kustom yang tidak punya koordinat dari peta
       const rect = canvas.getBoundingClientRect();
       const cx = Math.max(220, Math.floor(rect.width/2));
       const cy = 260;
@@ -294,7 +369,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     
-    // Simpan koordinat asli setelah memuat
+    // Simpan koordinat asli setelah memuat (dari peta atau fallback)
     saveOriginalCoords();
     
     const nextNum = Math.max(0, ...titik.map(n => {
@@ -333,15 +408,40 @@ document.addEventListener("DOMContentLoaded", () => {
         tambahTitik(x, y);
       } else if (mode === "tambahGaris") {
         const n = pukulTitik(x, y);
-        if (!n) return;
-      if (!pilihGaris.dari) {
-        pilihGaris.dari = n.id; updateActiveUI();
-      } else if (!pilihGaris.ke) {
-        pilihGaris.ke = n.id;
-        const w = inputJarak.value || prompt("Jarak (m):", "1");
-        tambahGaris(pilihGaris.dari, pilihGaris.ke, w);
-        pilihGaris = { dari: null, ke: null }; updateActiveUI();
-      }
+        if (!n) {
+          // Klik di area kosong, reset pilihan
+          if (pilihGaris.dari) {
+            pilihGaris.dari = null;
+            updateActiveUI();
+            draw();
+          }
+          return;
+        }
+        if (!pilihGaris.dari) {
+          // Pilih titik pertama
+          pilihGaris.dari = n.id;
+          updateActiveUI();
+          draw();
+        } else if (pilihGaris.dari === n.id) {
+          // Klik pada titik yang sama, reset
+          pilihGaris.dari = null;
+          updateActiveUI();
+          draw();
+        } else {
+          // Pilih titik kedua - buat garis
+          pilihGaris.ke = n.id;
+          let w = inputJarak.value;
+          if (!w || w <= 0) {
+            w = prompt("Jarak (m):", "1");
+          }
+          if (w && Number(w) > 0) {
+            tambahGaris(pilihGaris.dari, pilihGaris.ke, w);
+            tambahBarisGaris(pilihGaris.dari, pilihGaris.ke, Number(w));
+            draw();
+          }
+          pilihGaris = { dari: null, ke: null };
+          updateActiveUI();
+        }
       } else if (mode === "pilihAwal") {
         const n = pukulTitik(x, y); if (!n) return; pilihAwal.value = n.id;
       } else if (mode === "pilihTujuan") {
@@ -366,6 +466,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const s = pilihAwal.value; const t = pilihTujuan.value;
       if (!s || !t) { alert("Pilih awal dan tujuan"); return; }
       const res = await cariRuteTerpendek(s, t);
+      
       garisRute = (res && res.edgePath) ? res.edgePath : [];
       const names = ((res && res.path) ? res.path : []).map(id => {
         const n = titik.find(x => x.id === id);
@@ -374,8 +475,84 @@ document.addEventListener("DOMContentLoaded", () => {
       infoRute.innerHTML = (res && res.total != null)
         ? `<strong>Jarak:</strong> ${res.total} m | <strong>Rute:</strong> ${names.join(" → ")}`
         : "Rute tidak ditemukan";
+      
+      // Tampilkan data iterasi
+      const iterasiData = res && res.iterations && Array.isArray(res.iterations) ? res.iterations : [];
+      tampilkanIterasi(iterasiData);
+      
       draw();
     });
+    
+    // Fungsi untuk menampilkan data iterasi
+    function tampilkanIterasi(iterasiData) {
+      const tableHead = document.getElementById("iterationsTableHead");
+      const tableBody = document.getElementById("iterationsTableBody");
+      
+      if (!tableHead || !tableBody) {
+        return;
+      }
+      
+      // Kosongkan tabel
+      tableHead.innerHTML = "";
+      tableBody.innerHTML = "";
+      
+      if (!iterasiData || iterasiData.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.setAttribute("colspan", "100");
+        td.style.textAlign = "center";
+        td.style.padding = "1rem";
+        td.textContent = "Tidak ada data iterasi";
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+        return;
+      }
+      
+      // Ambil semua kolom dari data iterasi (semua node)
+      const allColumns = new Set(['Iterasi', 'Diproses']);
+      iterasiData.forEach(row => {
+        if (row && typeof row === 'object') {
+          Object.keys(row).forEach(key => allColumns.add(key));
+        }
+      });
+      
+      // Urutkan kolom: Iterasi, Diproses, lalu node lainnya (urutkan berdasarkan nama node)
+      const nodeColumns = Array.from(allColumns)
+        .filter(c => c !== 'Iterasi' && c !== 'Diproses')
+        .sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)?.[0] || '0');
+          const numB = parseInt(b.match(/\d+/)?.[0] || '0');
+          if (numA !== numB) {
+            return numA - numB;
+          }
+          return String(a).localeCompare(String(b));
+        });
+      const sortedColumns = ['Iterasi', 'Diproses', ...nodeColumns];
+      
+      // Buat header
+      const headerRow = document.createElement("tr");
+      sortedColumns.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headerRow.appendChild(th);
+      });
+      tableHead.appendChild(headerRow);
+      
+      // Buat baris data
+      iterasiData.forEach(row => {
+        if (!row || typeof row !== 'object') {
+          return;
+        }
+        const tr = document.createElement("tr");
+        sortedColumns.forEach(col => {
+          const td = document.createElement("td");
+          const value = row[col];
+          td.textContent = value !== undefined && value !== null ? String(value) : '-';
+          tr.appendChild(td);
+        });
+        tableBody.appendChild(tr);
+      });
+    }
 
     
     // Sinkronisasi dropdown dengan kanvas
@@ -407,5 +584,4 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   // Inisialisasi tampilan awal UI
   updateActiveUI();
-  
 });
