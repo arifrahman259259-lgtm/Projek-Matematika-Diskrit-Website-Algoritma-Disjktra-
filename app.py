@@ -8,7 +8,6 @@ import os
 import sys
 import json
 import sqlite3
-from io import BytesIO
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -442,100 +441,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404)
         self._cors()
         self.end_headers()
-
-
-class WSGIAdapter:
-    """Adapter to convert BaseHTTPRequestHandler to WSGI application"""
-    
-    def __init__(self, handler_class):
-        self.handler_class = handler_class
-    
-    def __call__(self, environ, start_response):
-        """WSGI application callable"""
-        class MockRequest:
-            def __init__(self, environ):
-                self.environ = environ
-                path = environ.get('PATH_INFO', '/')
-                query_string = environ.get('QUERY_STRING', '')
-                if query_string:
-                    self.path = f"{path}?{query_string}"
-                else:
-                    self.path = path
-                self.query_string = query_string
-                self.method = environ.get('REQUEST_METHOD', 'GET')
-                self.headers = {}
-                for key, value in environ.items():
-                    if key.startswith('HTTP_'):
-                        header_name = key[5:].replace('_', '-').title()
-                        self.headers[header_name] = value
-                if 'CONTENT_LENGTH' in environ:
-                    self.headers['Content-Length'] = environ['CONTENT_LENGTH']
-                if 'CONTENT_TYPE' in environ:
-                    self.headers['Content-Type'] = environ['CONTENT_TYPE']
-                content_length = int(environ.get('CONTENT_LENGTH', 0))
-                if content_length > 0:
-                    body = environ.get('wsgi.input', BytesIO()).read(content_length)
-                    self.rfile = BytesIO(body)
-                else:
-                    self.rfile = BytesIO()
-                self.wfile = BytesIO()
-        
-        class MockHandler(self.handler_class):
-            def __init__(self, request, client_address, server):
-                self.request = request
-                self.client_address = client_address
-                self.server = server
-                # Initialize attributes yang diperlukan oleh Handler
-                self.path = request.path
-                self.headers = {}
-                self.response_code = 200
-                self.response_message = 'OK'
-                self.headers_sent = False
-                # Initialize rfile and wfile from request
-                self.rfile = request.rfile
-                self.wfile = request.wfile
-            
-            def send_response(self, code, message=None):
-                self.response_code = code
-                self.response_message = message or 'OK'
-            
-            def send_header(self, key, value):
-                self.headers[key] = value
-            
-            def end_headers(self):
-                self.headers_sent = True
-            
-            def _cors(self):
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        
-        mock_request = MockRequest(environ)
-        mock_handler = MockHandler(mock_request, ('127.0.0.1', 0), None)
-        
-        try:
-            if mock_request.method == 'OPTIONS':
-                mock_handler.do_OPTIONS()
-            elif mock_request.method == 'GET':
-                mock_handler.do_GET()
-            elif mock_request.method == 'POST':
-                mock_handler.do_POST()
-            else:
-                mock_handler.send_response(405)
-                mock_handler._cors()
-                mock_handler.end_headers()
-        except Exception as e:
-            mock_handler.send_response(500)
-            mock_handler._cors()
-            mock_handler.end_headers()
-            error_msg = json.dumps({"error": str(e), "iterations": []}, ensure_ascii=False)
-            mock_handler.wfile.write(error_msg.encode('utf-8'))
-        
-        response_body = mock_handler.wfile.getvalue()
-        status = f"{mock_handler.response_code} {mock_handler.response_message}"
-        headers = list(mock_handler.headers.items())
-        start_response(status, headers)
-        return [response_body]
 
 
 # Initialize database and preload data
